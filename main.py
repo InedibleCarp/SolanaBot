@@ -1,95 +1,80 @@
 import requests
-import pandas as pd
 import time
-import matplotlib.pyplot as plt
 
 # Solana RPC Endpoint
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 
-# Wallet to track (Replace with any Solana address)
-WATCHED_WALLET = "YourWalletAddressHere"
-
-# Function to get latest block height
-def get_latest_block_height():
-    payload = {"jsonrpc": "2.0", "id": 1, "method": "getSlot"}
+# Function to get token metadata
+def get_token_metadata(token_address):
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTokenSupply",
+        "params": [token_address]
+    }
     response = requests.post(SOLANA_RPC_URL, json=payload).json()
-    return response.get("result", None)
+    supply_info = response.get("result", {})
+    
+    return {
+        "TokenAddress": token_address,
+        "Supply": int(supply_info.get("value", {}).get("amount", 0)) / (10 ** int(supply_info.get("value", {}).get("decimals", 0))),
+        "Decimals": supply_info.get("value", {}).get("decimals", 0)
+    }
 
-# Function to get transaction count
-def get_transaction_count():
-    payload = {"jsonrpc": "2.0", "id": 1, "method": "getTransactionCount"}
+# Function to get token accounts (holders)
+def get_token_holders(token_address):
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTokenAccountsByMint",
+        "params": [
+            token_address,
+            {"encoding": "jsonParsed"}
+        ]
+    }
     response = requests.post(SOLANA_RPC_URL, json=payload).json()
-    return response.get("result", None)
+    accounts = response.get("result", {}).get("value", [])
+    return len(accounts), accounts[:5]  # Return total holders and first 5 for demonstration
 
-# Function to get transactions for a specific wallet
-def get_wallet_transactions(wallet_address, limit=10):
+# Function to analyze token activity
+def get_recent_transactions(token_address):
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "getSignaturesForAddress",
-        "params": [wallet_address, {"limit": limit}]
+        "params": [token_address, {"limit": 5}]
     }
     response = requests.post(SOLANA_RPC_URL, json=payload).json()
-    return response.get("result", [])
+    transactions = response.get("result", [])
+    return transactions
 
-# Function to get details of a specific transaction
-def get_transaction_details(signature):
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getTransaction",
-        "params": [signature, {"encoding": "json"}]
-    }
-    response = requests.post(SOLANA_RPC_URL, json=payload).json()
-    return response.get("result", {})
+# Main function
+def token_insight_bot():
+    print("Welcome to the Solana Token Insight Bot!")
+    token_address = input("Please enter the Solana token address: ")
 
-# Collect data over time
-def collect_data(duration=60, interval=10):
-    data = []
-    start_time = time.time()
+    print("\nFetching token metadata...")
+    metadata = get_token_metadata(token_address)
+    print(f"Token Address: {metadata['TokenAddress']}")
+    print(f"Total Supply: {metadata['Supply']}")
+    print(f"Decimals: {metadata['Decimals']}")
 
-    while time.time() - start_time < duration:
-        block_height = get_latest_block_height()
-        tx_count = get_transaction_count()
-        transactions = get_wallet_transactions(WATCHED_WALLET, limit=5)
+    print("\nFetching token holders...")
+    total_holders, top_holders = get_token_holders(token_address)
+    print(f"Total Token Holders: {total_holders}")
+    print("Sample Holders:")
+    for holder in top_holders:
+        print(f"- {holder['pubkey']} with balance: {holder['account']['data']['parsed']['info']['tokenAmount']['uiAmount']}")
 
-        # Extracting transaction signatures
-        tx_signatures = [tx["signature"] for tx in transactions]
+    print("\nFetching recent transactions...")
+    transactions = get_recent_transactions(token_address)
+    print(f"Recent Transactions (Last {len(transactions)}):")
+    for tx in transactions:
+        print(f"- Signature: {tx['signature']} | Slot: {tx['slot']} | Confirmed: {tx['confirmationStatus']}")
 
-        # Fetching details of each transaction
-        tx_details = [get_transaction_details(sig) for sig in tx_signatures]
+    print("\nAnalysis Complete!")
+    print("You can use this bot again to analyze another token.")
 
-        # Extract relevant transaction info
-        parsed_tx = []
-        for tx in tx_details:
-            if tx:
-                block_time = tx.get("blockTime", None)
-                fee = tx.get("meta", {}).get("fee", None)
-                signatures = tx.get("transaction", {}).get("signatures", [])
-                accounts = tx.get("transaction", {}).get("message", {}).get("accountKeys", [])
-                
-                parsed_tx.append({"BlockTime": block_time, "Fee": fee, "Signatures": signatures, "Accounts": accounts})
-
-        # Log transactions and add to data
-        data.append({"Timestamp": time.time(), "BlockHeight": block_height, "TxCount": tx_count, "WalletTx": parsed_tx})
-        print(f"BlockHeight: {block_height}, TxCount: {tx_count}, WalletTxCount: {len(parsed_tx)}")
-
-        time.sleep(interval)  # Pause for interval seconds
-
-    return pd.DataFrame(data)
-
-# Run data collection
-df = collect_data(duration=60, interval=10)
-
-# Extract transaction counts for visualization
-df["WalletTxCount"] = df["WalletTx"].apply(len)
-
-# Plot wallet transaction count over time
-plt.figure(figsize=(10, 5))
-plt.plot(df["Timestamp"], df["WalletTxCount"], marker="o", linestyle="-", color="blue")
-plt.xlabel("Timestamp")
-plt.ylabel("Wallet Transaction Count")
-plt.title(f"Transactions for Wallet {WATCHED_WALLET} Over Time")
-plt.xticks(rotation=45)
-plt.grid()
-plt.show()
+# Run the bot
+if __name__ == "__main__":
+    token_insight_bot()
