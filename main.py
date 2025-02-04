@@ -75,11 +75,25 @@ class SolanaTokenBot:
             raise
 
     def get_token_holders(self, token_address: str, limit: int = 100) -> Tuple[int, List[Dict]]:
-        """Get token holder information with pagination support"""
+        """Get token holder information using getProgramAccounts"""
         try:
+            # Token Program ID
+            TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+            
+            filters = [
+                {"dataSize": 165},  # Size of token account data
+                {"memcmp": {"offset": 0, "bytes": token_address}}  # Filter for the mint
+            ]
+            
             response = self._make_rpc_request(
-                "getTokenAccountsByMint",
-                [token_address, {"encoding": "jsonParsed"}]
+                "getProgramAccounts",
+                [
+                    TOKEN_PROGRAM_ID,
+                    {
+                        "encoding": "jsonParsed",
+                        "filters": filters
+                    }
+                ]
             )
             
             accounts = response.get("result", {}).get("value", [])
